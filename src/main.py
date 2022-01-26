@@ -3,6 +3,14 @@ import argparse, time, sys
 from logger import EnvLogger
 
 
+# Get Raspberry Pi serial number to use as ID
+def get_serial_number():
+    with open("/proc/cpuinfo", "r") as f:
+        for line in f:
+            if line[0:6] == "Serial":
+                return line.split(":")[1].strip()
+
+
 def parse_args():
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("-h", "--host", required=True, help="the MQTT host to connect to")
@@ -16,6 +24,7 @@ def parse_args():
     ap.add_argument("--use-pms5003", action="store_true", help="if set, PM readings will be taken from the PMS5003 sensor")
     ap.add_argument("-r", "--retain", action='store_true', help="tell MQTT broker to retain the last message")
     ap.add_argument("--help", action="help", help="print this help message and exit")
+    ap.add_argument("--remove-config", action="store_true", help="if set, will remove config topics")
     return vars(ap.parse_args())
 
 
@@ -35,6 +44,11 @@ def main():
         retain=args["retain"],
     )
 
+    if args["remove_config"]:
+        logger.remove_sensor_config()
+        logger.destroy()
+        sys.exit("Configs removed")
+
     # Take readings without publishing them for the specified delay period,
     # to allow the sensors time to warm up and stabilise
     publish_start_time = time.time() + args["delay"]
@@ -48,18 +62,20 @@ def main():
 
     while True:
         if logger.connection_error is not None:
-            sys.exit(f"Connecting to the MQTT server failed: {logger.connection_error}")
-        
+            sys.exit(
+                f"Connecting to the MQTT server failed: {logger.connection_error}"
+            )
+
         should_publish = time.time() >= next_publish_time
         if should_publish:
             next_publish_time += args["interval"]
-        
+            logger.sensor_config()
         logger.update(publish_readings=should_publish)
 
         next_sample_time += 1
         sleep_duration = max(next_sample_time - time.time(), 0)
         time.sleep(sleep_duration)
-    
+
     logger.destroy()
 
 
