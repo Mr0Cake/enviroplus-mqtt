@@ -69,7 +69,7 @@
 
         -r, --retain  tell MQTT broker to retain the last message        
  
-
+        --remove-config     removes the previous config
         --help                print this help message and exit
 
 ## Published Topics
