@@ -1,4 +1,9 @@
-import collections, threading, traceback
+import collections
+import threading
+import traceback
+import json
+
+from subprocess import PIPE, Popen, check_output
 
 import paho.mqtt.client as mqtt
 
@@ -10,15 +15,18 @@ except ImportError:
     import ltr559
 
 from bme280 import BME280
-from pms5003 import PMS5003
 from enviroplus import gas
+from pms5003 import PMS5003
 
 
 class EnvLogger:
     def __init__(self, client_id, host, port, username, password, prefix, use_pms5003, num_samples, retain):
+
         self.bme280 = BME280()
 
+        self.client_id = client_id
         self.prefix = prefix
+        self.room = room
 
         self.connection_error = None
         self.client = mqtt.Client(client_id=client_id)
@@ -30,10 +38,14 @@ class EnvLogger:
         self.samples = collections.deque(maxlen=num_samples)
         self.latest_pms_readings = {}
 
-        if use_pms5003:
-            self.pm_thread = threading.Thread(target=self.__read_pms_continuously)
+        self.use_pms5003 = use_pms5003
+
+        if self.use_pms5003:
+            self.pm_thread = threading.Thread(
+                target=self.__read_pms_continuously)
             self.pm_thread.daemon = True
             self.pm_thread.start()
+
         self.retain = retain
     
 
@@ -49,13 +61,12 @@ class EnvLogger:
         if rc > 0:
             self.connection_error = errors.get(rc, "unknown error")
 
-
     def __read_pms_continuously(self):
         """Continuously reads from the PMS5003 sensor and stores the most recent values
         in `self.latest_pms_readings` as they become available.
 
         If the sensor is not polled continously then readings are buffered on the PMS5003,
-        and over time a significant delay is introduced between changes in PM levels and 
+        and over time a significant delay is introduced between changes in PM levels and
         the corresponding change in reported levels."""
 
         pms = PMS5003()
@@ -63,17 +74,134 @@ class EnvLogger:
             try:
                 pm_data = pms.read()
                 self.latest_pms_readings = {
-                    "particulate/1.0": pm_data.pm_ug_per_m3(1.0, atmospheric_environment=True),
-                    "particulate/2.5": pm_data.pm_ug_per_m3(2.5, atmospheric_environment=True),
-                    "particulate/10.0": pm_data.pm_ug_per_m3(None, atmospheric_environment=True),
+                    "pm10": pm_data.pm_ug_per_m3(
+                        1.0),  #, atmospheric_environment=True),
+                    "pm25": pm_data.pm_ug_per_m3(
+                        2.5),  #, atmospheric_environment=True),
+                    "pm100": pm_data.pm_ug_per_m3(
+                        10),  #, atmospheric_environment=True),
                 }
             except:
                 print("Failed to read from PMS5003. Resetting sensor.")
                 traceback.print_exc()
                 pms.reset()
 
+    def remove_sensor_config(self):
+        """
+        Remove previous config topic cretead for each sensor
+        """
+        print("removed")
+        sensors = [
+            "proximity",
+            "lux",
+            "temperature",
+            "pressure",
+            "humidity",
+            "oxidising",
+            "reducing",
+            "nh3",
+            "pm10",
+            "pm25",
+            "pm100",
+        ]
+
+        for sensor in sensors:
+            sensor_topic_config = f"sensor/{self.room}/{sensor}/config"
+            self.publish(sensor_topic_config, '')
+
+    def sensor_config(self):
+        """
+        Create config topic for each sensor
+        """
+        # homeassistant/sensor/livingRoom/temperature/config
+        # homeassistant/sensor/livingRoom/temperature/state
+        # homeassistant/livingroom/enviroplus/state
+        sensors = {
+            "proximity": {
+                "unit_of_measurement": "cm",
+                "value_template": "{{ value_json }}"
+            },
+            "lux": {
+                "device_class": "illuminance",
+                "unit_of_measurement": "lx",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:weather-sunny"
+            },
+            "temperature": {
+                "device_class": "temperature",
+                "unit_of_measurement": "°C",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thermometer"
+            },
+            "pressure": {
+                "device_class": "pressure",
+                "unit_of_measurement": "hPa",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:arrow-down-bold"
+            },
+            "humidity": {
+                "device_class": "humidity",
+                "unit_of_measurement": "%H",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:water-percent"
+            },
+            "oxidising": {
+                "unit_of_measurement": "no2",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thought-bubble"
+            },
+            "reducing": {
+                "unit_of_measurement": "CO",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thought-bubble"
+            },
+            "nh3": {
+                "unit_of_measurement": "nh3",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thought-bubble"
+            },
+        }
+
+        if self.use_pms5003:
+            sensors["pm10"] = {
+                "unit_of_measurement": "ug/m3",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thought-bubble-outline",
+            }
+            sensors["pm25"] = {
+                "unit_of_measurement": "ug/m3",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thought-bubble-outline",
+            }
+            sensors["pm100"] = {
+                "unit_of_measurement": "ug/m3",
+                "value_template": "{{ value_json }}",
+                "icon": "mdi:thought-bubble-outline",
+            }
+        try:
+            for sensor in sensors:
+                sensors[sensor]["name"] = f"{self.room} {sensor.capitalize()}"
+                sensors[sensor][
+                    "state_topic"] = f"{self.prefix}/sensor/{self.room}/{sensor}/state"
+                sensors[sensor]["unique_id"] = f"{sensor}-{self.client_id}"
+
+                sensor_topic_config = f"sensor/{self.room}/{sensor}/config"
+                self.publish(sensor_topic_config, json.dumps(sensors[sensor]))
+            print("Configs added")
+        except:
+            print("Failed to add configs.")
+            traceback.print_exc()
+
+    # Get CPU temperature to use for compensation
+    def get_cpu_temperature(self):
+        process = Popen(["vcgencmd", "measure_temp"],
+                        stdout=PIPE,
+                        universal_newlines=True)
+        output, _error = process.communicate()
+        return float(output[output.index("=") + 1:output.rindex("'")])
 
     def take_readings(self):
+        hum_comp_factor = 1.3
         readings = {}
 
         try:
@@ -92,42 +220,39 @@ class EnvLogger:
             print("Error reading temperature sensor data")
 
         try:
-            readings["pressure"] = self.bme280.get_pressure()
+            readings["pressure"] = round(int(self.bme280.get_pressure() * 100), -1)
         except OSError:
             print("Error reading pressure sensor data")
 
         try:
-            readings["humidity"] = self.bme280.get_humidity()
+            readings["humidity"] = round(int(self.bme280.get_humidity() * hum_comp_factor), 1)
         except OSError:
             print("Error reading humidity sensor data")
 
         try:
             gas_data = gas.read_all()
-            readings["gas/oxidising"] = gas_data.oxidising
-            readings["gas/reducing"] = gas_data.reducing
-            readings["gas/nh3"] = gas_data.nh3
+            readings["oxidising"] = int(gas_data.oxidising / 1000),
+            readings["reducing"] = int(gas_data.reducing / 1000),
+            readings["nh3"] = int(gas_data.nh3 / 1000),
         except OSError:
             print("Error reading gas sensor data")
 
         readings.update(self.latest_pms_readings)
-        
-        return readings
 
+        return readings
 
     def publish(self, topic, value, retain):
         topic = self.prefix.strip("/") + "/" + topic
         self.client.publish(topic, str(value), retain=retain)
 
-
     def update(self, publish_readings=True):
         self.samples.append(self.take_readings())
-
         if publish_readings:
             for topic in self.samples[0].keys():
                 try:
                     value_sum = sum([d[topic] for d in self.samples])
-                    value_avg = value_sum / len(self.samples)
-                    self.publish(topic, value_avg, retain=self.retain)
+                    value_avg = round(value_sum / len(self.samples), 1)
+                    self.publish(f"sensor/{self.room}/{topic}/state", value_avg, retain=self.retain)
                 except KeyError:
                     print(f"Error publishing data for {topic}")
 
