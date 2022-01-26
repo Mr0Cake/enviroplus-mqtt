@@ -186,19 +186,11 @@ class EnvLogger:
                 sensors[sensor]["unique_id"] = f"{sensor}-{self.client_id}"
 
                 sensor_topic_config = f"sensor/{self.room}/{sensor}/config"
-                self.publish(sensor_topic_config, json.dumps(sensors[sensor], self.retain))
+                self.publish(sensor_topic_config, json.dumps(sensors[sensor]), self.retain)
             print("Configs added")
         except:
             print("Failed to add configs.")
             traceback.print_exc()
-
-    # Get CPU temperature to use for compensation
-    def get_cpu_temperature(self):
-        process = Popen(["vcgencmd", "measure_temp"],
-                        stdout=PIPE,
-                        universal_newlines=True)
-        output, _error = process.communicate()
-        return float(output[output.index("=") + 1:output.rindex("'")])
 
     def take_readings(self):
         hum_comp_factor = 1.3
@@ -231,9 +223,9 @@ class EnvLogger:
 
         try:
             gas_data = gas.read_all()
-            readings["oxidising"] = int(gas_data.oxidising / 1000),
-            readings["reducing"] = int(gas_data.reducing / 1000),
-            readings["nh3"] = int(gas_data.nh3 / 1000),
+            readings["oxidising"] = int(gas_data.oxidising / 1000)
+            readings["reducing"] = int(gas_data.reducing / 1000)
+            readings["nh3"] = int(gas_data.nh3 / 1000)
         except OSError:
             print("Error reading gas sensor data")
 
@@ -252,7 +244,7 @@ class EnvLogger:
                 try:
                     value_sum = sum([d[topic] for d in self.samples])
                     value_avg = round(value_sum / len(self.samples), 1)
-                    self.publish(f"sensor/{self.room}/{topic}/state", value_avg, retain=self.retain)
+                    self.publish(f"sensor/{self.room}/{topic}/state", value_avg, self.retain)
                 except KeyError:
                     print(f"Error publishing data for {topic}")
 
