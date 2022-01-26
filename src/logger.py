@@ -20,7 +20,7 @@ from pms5003 import PMS5003
 
 
 class EnvLogger:
-    def __init__(self, client_id, host, port, username, password, prefix, use_pms5003, num_samples, retain):
+    def __init__(self, client_id, host, port, username, password, prefix, use_pms5003, num_samples, room, retain):
 
         self.bme280 = BME280()
 

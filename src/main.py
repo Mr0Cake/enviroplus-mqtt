@@ -25,6 +25,7 @@ def parse_args():
     ap.add_argument("-r", "--retain", action='store_true', help="tell MQTT broker to retain the last message")
     ap.add_argument("--help", action="help", help="print this help message and exit")
     ap.add_argument("--remove-config", action="store_true", help="if set, will remove config topics")
+    ap.add_argument("--room", default="", help="the room the sensor is in")
     return vars(ap.parse_args())
 
 
@@ -41,6 +42,7 @@ def main():
         prefix=args["prefix"],
         use_pms5003=args["use_pms5003"],
         num_samples=args["interval"],
+        room=args["room"],
         retain=args["retain"],
     )
 
