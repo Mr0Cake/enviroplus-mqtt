@@ -107,7 +107,7 @@ class EnvLogger:
 
         for sensor in sensors:
             sensor_topic_config = f"sensor/{self.room}/{sensor}/config"
-            self.publish(sensor_topic_config, '')
+            self.publish(sensor_topic_config, '', self.retain)
 
     def sensor_config(self):
         """
@@ -186,7 +186,7 @@ class EnvLogger:
                 sensors[sensor]["unique_id"] = f"{sensor}-{self.client_id}"
 
                 sensor_topic_config = f"sensor/{self.room}/{sensor}/config"
-                self.publish(sensor_topic_config, json.dumps(sensors[sensor]))
+                self.publish(sensor_topic_config, json.dumps(sensors[sensor], self.retain))
             print("Configs added")
         except:
             print("Failed to add configs.")
